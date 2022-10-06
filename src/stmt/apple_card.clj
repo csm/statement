@@ -1,4 +1,5 @@
 (ns stmt.apple-card
+  "Parse an Apple Card PDF statement."
   (:require [clojure.java.shell :as sh]
             [clojure.string :as string]))
 
@@ -40,11 +41,23 @@
   (apply concat (map #(seq->map % keys) seqs)))
 
 (defn parse-apple-card-statement
+  "Parses an apple card PDF statement into a map.
+
+  Result map will contain:
+
+  - :transactions, a seq of maps containing keys:
+    - :date
+    - :description
+    - :daily-cash-percent
+    - :daily-cash
+    - :amount
+
+  Returns an anomaly map on error."
   [file]
   (let [result (sh/sh "pdftotext" file "-")]
     (if (not (zero? (:exit result)))
       {:cognitect.anomalies/category :fault
-       :message (:err result)}
+       :cognitect.anomalies/message (:err result)}
       (let [lines (->> (:out result)
                        (re-seq #"([^\r\n]*)(\r?\n)")
                        (map second)
