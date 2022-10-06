@@ -1,5 +1,5 @@
-(ns stmt.apple-card
-  "Parse an Apple Card PDF statement."
+(ns stmt
+  "Parse credit card PDF statements."
   (:require [clojure.java.shell :as sh]
             [clojure.string :as string]))
 
