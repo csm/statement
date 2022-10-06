@@ -3,8 +3,11 @@
   (:require [clojure.java.shell :as sh]
             [clojure.string :as string]))
 
-(def transactions-start #"Transactions")
-(def transactions-end #"(Page [0-9]+ ?/[0-9]+)|(Total Daily Cash this month)")
+(def apple-transactions-start #"Transactions")
+(def apple-transactions-end #"(Page [0-9]+ ?/[0-9]+)|(Total Daily Cash this month)")
+
+(def capitalone-start #"([A-Z ]+ #[0-9]+: Transactions)|(Transactions .Continued.)")
+(def capitalone-end #"(Additional Information on the next page)|([A-Z ]+ #[0-9]+: Total Transactions)")
 
 (defn append-last
   [seqs item]
@@ -40,8 +43,22 @@
   [seqs keys]
   (apply concat (map #(seq->map % keys) seqs)))
 
+(defn parse-statement
+  [file begin end keys drop-header-count]
+  (let [result (sh/sh "pdftotext" file "-")]
+    (if (not (zero? (:exit result)))
+      {:cognitect.anomalies/category :fault
+       :cognitect.anomalies/message (:err result)}
+      (let [lines (->> (:out result)
+                       (re-seq #"([^\r\n]*)(\r?\n)")
+                       (map second)
+                       (map string/trim)
+                       (remove empty?))
+            transactions (map #(drop drop-header-count %) (seqs-between lines begin end))]
+        {:transactions (seqs->maps transactions keys)}))))
+
 (defn parse-apple-card-statement
-  "Parses an apple card PDF statement into a map.
+  "Parses an Apple Card PDF statement into a map.
 
   Result map will contain:
 
@@ -54,14 +71,21 @@
 
   Returns an anomaly map on error."
   [file]
-  (let [result (sh/sh "pdftotext" file "-")]
-    (if (not (zero? (:exit result)))
-      {:cognitect.anomalies/category :fault
-       :cognitect.anomalies/message (:err result)}
-      (let [lines (->> (:out result)
-                       (re-seq #"([^\r\n]*)(\r?\n)")
-                       (map second)
-                       (map string/trim)
-                       (remove empty?))
-            transactions (map #(drop 4 %) (seqs-between lines transactions-start transactions-end))]
-        {:transactions (seqs->maps transactions [:date :description :daily-cash-percent :daily-cash :amount])}))))
+  (parse-statement file apple-transactions-start apple-transactions-end
+                   [:date :description :daily-cash-percent :daily-cash :amount]
+                   4))
+
+(defn parse-capital-one-statement
+  "Parses an Apple Card PDF statement into a map.
+
+  Result map will contain:
+
+  - :transactions, a seq of maps containing keys:
+    - :trans-date
+    - :post-date
+    - :description
+    - :amount
+
+  Returns an anomaly map on error."
+  [file]
+  (parse-statement file capitalone-start capitalone-end [:trans-date :post-date :description :amount] 4))
